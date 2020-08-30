@@ -1,0 +1,806 @@
+---
+title: "Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(readr)
+library(maps)
+library(ggplot2)
+library(tidyverse)
+library(leaps)
+library(MASS)
+library(class)
+library(dplyr)
+library(tidyr)
+library(e1071)
+#library(kernlab)
+library(tree)
+library(randomForest)
+fifadataraw <- read_csv("fifadata.csv")
+head(fifadataraw)
+unique(fifadataraw$Club)
+unique(fifadataraw$Position)
+
+fifadataraw1 <- fifadataraw
+
+fifadataraw1 <- fifadataraw1 %>% mutate(League = ifelse(Club == "FC Bayern München" | Club == "Borussia Dortmund" | Club == "RB Leipzig" | Club == "Bayer 04 Leverkusen" | Club == "Borussia Mönchengladbach" | Club == "VfL Wolfsburg" | Club == "Eintracht Frankfurt" | Club == "SV Werd Bremen" | Club == "TSG 1899 Hoffenheim" | Club == "Fortuna Düsseldorf" | Club == "Hertha BSC" | Club == "1. FSV Mainz 05" | Club == "SC Freiburg" | Club == "FC Schalke 04" | Club == "FC Augsburg" | Club == "VfB Stuttgart" | Club == "Hannover 96" | Club == "FC Nürnberg", "Bundesliga", ifelse(Club == "FC Barcelona" | Club == "Real Madrid" | Club == "Atlético Madrid" | Club == "Valencia CF" | Club == "Getafe CF" | Club == "Sevilla FC" | Club == "RCD Espanyol" | Club == "Athletic Club de Bilbao" | Club == "Real Sociedad" | Club == "Real Betis" | Club == "Deportivo Alavés" | Club == "SD Eibar" | Club == "CD Leganés" | Club == "Villarreal CF" | Club == "Levante UD" | Club == "Real Valladolid CF" | Club == "RC Celta" | Club == "Girona FC" | Club == "SD Huesca" | Club == "Rayo Vallecano", "La Liga", ifelse(Club == "Manchester City" | Club == "Liverpool" | Club == "Chelsea" | Club == "Tottenham Hotspur"| Club == "Arsenal" | Club == "Manchester United" | Club == "Wolverhampton Wanderers" | Club == "Everton" | Club == "Leicester City" | Club == "West Ham United" | Club == "Watford" | Club == "Crystal Palace" | Club == "Newcastle United" | Club == "Bournemouth" | Club == "Burnley" | Club == "Southampton" | Club == "Brighton & Hove Albion" | Club == "Cardiff City" | Club == "Fulham" | Club == "Huddersfield Town", "Premier League", ifelse(Club == "Juventus" | Club == "Napoli" | Club == "Atalanta" | Club == "Inter" | Club == "Milan" | Club == "Roma" | Club == "Torino" | Club == "Lazio" | Club == "Sampdoria" | Club == "Bologna" | Club == "Sassuolo" | Club == "Udinese" | Club == "SPAL" | Club == "Parma" | Club == "Cagliari" | Club == "Fiorentina" | Club == "Genoa" | Club == "Empoli" | Club == "Frosinone" | Club == "Chievo Verona", "Serie A", ifelse(Club == "Paris Saint-Germain" | Club == "LOSC Lille" | Club == "Olympique Lyonnais" | Club == "AS Saint-Étienne" | Club == "Olympique de Marseille" | Club == "Montpellier HSC" | Club == "OGC Nice" | Club == "Stade de Reims" | Club == "Nîmes Olympique" | Club == "Stade Rennais FC" | Club == "RC Strasbourg Alsace" | Club == "FC Nantes" | Club == "Angers SCO" | Club == "FC Girondins de Bordeaux" | Club == "Amiens SC" | Club == "Toulouse Football Club" | Club == "AS Monaco" | Club == "Dijon FCO" | Club == "Stade Malherbe Caen" | Club == "En Avant de Guingamp", "Ligue 1", "NA"))))))
+head(fifadataraw1) 
+
+fifa_data2 <- fifadataraw1 %>% dplyr::select(-c(ID, Flag, Photo, 11, 29:54)) %>%
+  mutate(ValueMultiplier = ifelse(str_detect(Value, "K"), 1000, ifelse(str_detect(Value, "M"), 1000000, 1))) %>%
+  mutate(Value = as.numeric(str_extract(Value, "[[:digit:]]+\\.*[[:digit:]]*")) * ValueMultiplier) %>%
+  mutate(Position = ifelse(is.na(Position), "Unknown", Position))
+
+fifa_data2 <- fifa_data2 %>%
+  mutate(WageMultiplier = ifelse(str_detect(Wage, "K"), 1000, ifelse(str_detect(Wage, "M"), 1000000, 1))) %>%
+  mutate(Wage = as.numeric(str_extract(Wage, "[[:digit:]]+\\.*[[:digit:]]*")) * WageMultiplier)
+
+
+temp1 <- sapply(fifa_data2$Weight, extract)
+fifa_data2$Weight <- as.numeric(temp1)
+
+temp2 <- strsplit(fifa_data2$Height, "'")
+for (i in 1:length(temp2)) {
+  temp2[[i]] <- as.numeric(temp2[[i]])
+}
+for (i in 1:length(temp2)) {
+  temp2[[i]] <- (temp2[[i]][1] *12) + temp2[[i]][2]
+}
+
+temp3 <- as.numeric(unlist(temp2))
+
+fifa_data2$Height <- temp3
+
+head(fifa_data2)
+
+colleague <- c(4, 10:22, 59, 61, 62)
+
+fifa_data3 <- fifa_data2[,-colleague]
+
+fifa_data4 <- fifa_data3[!is.na(fifa_data3$League),]
+unique(fifa_data4$League)
+
+set.seed(1234)
+cv1 <- fold(fifa_data4, k = 5, cat_col = 'League', id_col = 'X1')
+cv1 <- cv1 %>%
+  rename(fold = .folds)
+head(cv1)
+testleague <- subset(cv1, fold == 5)
+trainleague <- anti_join(cv1, testleague)
+ 
+
+#write.csv(trainleague,'trainleague.csv')
+#write.csv(testleague,'testleague.csv')
+
+
+```
+
+
+```{r}
+fifa_data <- fifadataraw %>% dplyr::select(-c(ID, Flag, Photo, 11, 29:54)) %>%
+  mutate(ValueMultiplier = ifelse(str_detect(Value, "K"), 1000, ifelse(str_detect(Value, "M"), 1000000, 1))) %>%
+  mutate(Value = as.numeric(str_extract(Value, "[[:digit:]]+\\.*[[:digit:]]*")) * ValueMultiplier) %>%
+  mutate(Position = ifelse(is.na(Position), "Unknown", Position))
+```
+
+```{r}
+fifa_data <- fifa_data %>%
+  mutate(WageMultiplier = ifelse(str_detect(Wage, "K"), 1000, ifelse(str_detect(Wage, "M"), 1000000, 1))) %>%
+  mutate(Wage = as.numeric(str_extract(Wage, "[[:digit:]]+\\.*[[:digit:]]*")) * WageMultiplier)
+head(fifa_data)
+
+off <- c('ST', 'CF', 'LF', 'LS', 'LW', 'RF', 'RS', 'RW', 'CAM', 'LAM', 'RAM')
+
+def <- c('CB', 'LB', 'LCB', 'LWB', 'RB', 'RCB', 'RWB', 'LDM', 'CDM', 'RDM')
+
+mid <- c('CM', 'LCM', 'RCM', 'RM', 'LM')
+
+gk <- c('GK')
+
+
+
+fifa_data <- fifa_data  %>% mutate(pgroup = ifelse(Position %in% gk, "GK", ifelse(Position %in% off, "OFF", ifelse(Position %in% mid, "MID", ifelse(Position %in% def, "DEF", "NA")))))
+
+head(fifa_data)
+
+##AGE
+
+colpca <- c(1, 3, 5, 6, 25:58, 62)
+fifa_data_pca <- na.omit(fifa_data[colpca])
+
+head(fifa_data_pca)
+
+pca_fifa <- prcomp(fifa_data_pca %>% dplyr::select(-X1, -Age, -pgroup), scale = TRUE)
+
+summary(pca_fifa)
+
+pca_fifa$rotation
+
+screeplot(pca_fifa)
+
+pca_scores <- pca_fifa$x
+ldr3 <- pca_scores %>%
+  data.frame() %>%
+  mutate(Age = fifa_data_pca$Age, X1 = fifa_data_pca$X1, pgroup = fifa_data_pca$pgroup) %>%
+  dplyr::select(Age, pgroup, everything())
+ldr3
+
+
+##VALUE
+colpca <- c(1, 8, 5, 6, 25:58, 62)
+fifa_data_pca <- na.omit(fifa_data[colpca])
+
+head(fifa_data_pca)
+
+pca_fifa <- prcomp(fifa_data_pca %>% dplyr::select(-X1, -Value, -pgroup), scale = TRUE)
+
+summary(pca_fifa)
+
+pca_fifa$rotation
+
+screeplot(pca_fifa)
+
+pca_scores <- pca_fifa$x
+ldr8 <- pca_scores %>%
+  data.frame() %>%
+  mutate(Value = fifa_data_pca$Value, X1 = fifa_data_pca$X1, pgroup = fifa_data_pca$pgroup) %>%
+  dplyr::select(Value, pgroup, everything())
+ldr8
+
+
+##WAGE
+colpca <- c(1, 9, 5, 6, 25:58, 62)
+fifa_data_pca <- na.omit(fifa_data[colpca])
+
+head(fifa_data_pca)
+
+pca_fifa <- prcomp(fifa_data_pca %>% dplyr::select(-X1, -Wage, -pgroup), scale = TRUE)
+
+summary(pca_fifa)
+
+pca_fifa$rotation
+
+screeplot(pca_fifa)
+
+pca_scores <- pca_fifa$x
+ldr9 <- pca_scores %>%
+  data.frame() %>%
+  mutate(Wage = fifa_data_pca$Wage, X1 = fifa_data_pca$X1, pgroup = fifa_data_pca$pgroup) %>%
+  dplyr::select(Wage,pgroup, everything())
+ldr9
+
+
+#SPECIAL
+colpca <- c(1, 10, 5, 6, 25:58,62)
+fifa_data_pca <- na.omit(fifa_data[colpca])
+
+head(fifa_data_pca)
+
+pca_fifa <- prcomp(fifa_data_pca %>% dplyr::select(-X1, -Special, -pgroup), scale = TRUE)
+
+summary(pca_fifa)
+
+pca_fifa$rotation
+
+screeplot(pca_fifa)
+
+pca_scores <- pca_fifa$x
+ldr10 <- pca_scores %>%
+  data.frame() %>%
+  mutate(Special = fifa_data_pca$Special, X1 = fifa_data_pca$X1, pgroup = fifa_data_pca$pgroup) %>%
+  dplyr::select(Special, pgroup, everything())
+ldr10
+
+
+ldr3
+ldr8
+```
+
+```{r}
+ggplot(ldr3.1, aes(x = PC1, y = PC2, color = ldr3.1$pgroup)) +geom_vline(xintercept = 0) +
+geom_hline(yintercept = 0) +geom_text(aes(label = X1), size = 2) +scale_x_continuous(breaks = -10:10) +coord_cartesian(xlim = c(-10, 15)) +theme_light()
+```
+
+```{r}
+##install.packages("scatterplot3d") # Install
+library("scatterplot3d") # load
+
+ldr3.1 <- ldr3[-which(ldr3$pgroup == "NA"),]
+
+ldr3.1
+colors <- c("#999999", "#E69F00", "#56B4E9", "#FF0000")
+colors <- colors[as.factor(ldr3.1$pgroup)]
+s3d <- scatterplot3d(ldr3.1[,c(3,4,5)], pch = 1,  color=colors)
+#legend("left", legend = levels(ldr3.1$pgroup), col = colors, pch = 16)
+
+colors <- c("#999999", "#E69F00", "#56B4E9", "#000000", "#FF0000")
+colors <- colors[as.factor(ldr8$pgroup)]
+s4d <- scatterplot3d(ldr8[,c(3,4,1)], pch = 1,  color=colors)
+legend("left", legend = levels(as.factor(ldr8$pgroup)), col = colors, pch = 16)
+
+colors <- c("#999999", "#E69F00", "#56B4E9", "#000000", "#FF0000")
+colors <- colors[as.factor(ldr9$pgroup)]
+scatterplot3d(ldr9[,c(3,4,1)], pch = 1,  color=colors)
+legend("left", legend = levels(as.factor(ldr9$pgroup)),
+      col = colors, pch = 16)
+
+colors <- c("#999999", "#E69F00", "#56B4E9", "#000000", "#FF0000")
+colors <- colors[as.factor(ldr10$pgroup)]
+scatterplot3d(ldr10[,c(3,4,1)], pch = 1,  color=colors)
+legend("left", legend = levels(as.factor(ldr10$pgroup)),
+      col = colors, pch = 16)
+
+```
+
+```{r}
+head(fifa_data)
+hist(fifa_data$Age)
+sortage <- sort(fifa_data$Age, decreasing = FALSE)
+length(sortage)
+sortage[(18207/3)]
+sortage[(18207*2/3)]
+
+fifa_data <- fifa_data %>% mutate(AgeGroup = ifelse(Age <= 22, "young", ifelse(Age > 22 & Age <= 27, "middle", ifelse(Age >= 28, "old", "NA"))))
+fifa_data_pagegroup <- transform(fifa_data, pagegroup = paste(pgroup,AgeGroup))
+head(fifa_data_pagegroup)
+
+extract <- function(x){
+  regexp <- "[[:digit:]]+"
+  str_extract(x, regexp)
+}
+temp1 <- sapply(fifa_data_pagegroup$Weight, extract)
+fifa_data_pagegroup$Weight <- as.numeric(temp1)
+
+temp2 <- strsplit(fifa_data_pagegroup$Height, "'")
+for (i in 1:length(temp2)) {
+  temp2[[i]] <- as.numeric(temp2[[i]])
+}
+for (i in 1:length(temp2)) {
+  temp2[[i]] <- (temp2[[i]][1] *12) + temp2[[i]][2]
+}
+
+temp3 <- as.numeric(unlist(temp2))
+
+fifa_data_pagegroup$Height <- temp3
+
+
+
+
+colors2 <- c("palegreen1", "lightskyblue1", "honeydew2", "cyan3", "orchid", "grey55", "papayawhip", "mediumturquoise", "darkslategrey", "salmon2", "gold1", "tomato3")
+colpca <- c(1, 8, 5, 6, 25:58, 64)
+fifa_data_pca2 <- na.omit(fifa_data_pagegroup[colpca])
+
+head(fifa_data_pca2)
+
+pca_fifa2 <- prcomp(fifa_data_pca2 %>% dplyr::select(-X1, -Value, -pagegroup), scale = TRUE)
+
+summary(pca_fifa2)
+
+pca_fifa2$rotation
+
+screeplot(pca_fifa2)
+
+pca_scores2 <- pca_fifa2$x
+ldr8_2 <- pca_scores2 %>%
+  data.frame() %>%
+  mutate(Value = fifa_data_pca2$Value, X1 = fifa_data_pca2$X1, pagegroup = fifa_data_pca2$pagegroup) %>%
+  dplyr::select(Value, pagegroup, everything())
+ldr8_2
+
+colors2 <- colors2[as.factor(ldr8_2$pagegroup)]
+s4d <- scatterplot3d(ldr8[,c(3,4,1)], pch = 1,  color=colors2)
+legend("right", legend = levels(as.factor(ldr8_2$pagegroup)),
+      col = colors2, pch = 16)
+
+ggplot(ldr8_2, aes(x = PC1, y = PC2, color = ldr8_2$pagegroup)) +geom_vline(xintercept = 0) +
+geom_hline(yintercept = 0) +geom_text(aes(label = X1), size = 2) +scale_x_continuous(breaks = -10:10) +coord_cartesian(xlim = c(-10, 15)) +theme_light()
+```
+
+```{r}
+fifa_data_pca2 <- fifa_data_pca2[-c(1,2)]
+
+ldahist1 <- fifa_data_pca2[which(fifa_data_pca2$pagegroup == "OFF young"),]
+ldahist2 <- fifa_data_pca2[which(fifa_data_pca2$pagegroup == "OFF middle"),]
+ldahist3 <- fifa_data_pca2[which(fifa_data_pca2$pagegroup == "OFF old"),]
+ldahist4 <- fifa_data_pca2[which(fifa_data_pca2$pagegroup == "DEF young"),]
+ldahist5 <- fifa_data_pca2[which(fifa_data_pca2$pagegroup == "DEF middle"),]
+ldahist6 <- fifa_data_pca2[which(fifa_data_pca2$pagegroup == "DEF old"),]
+ldahist7 <- fifa_data_pca2[which(fifa_data_pca2$pagegroup == "GK young"),]
+ldahist8 <- fifa_data_pca2[which(fifa_data_pca2$pagegroup == "GK middle"),]
+ldahist9 <- fifa_data_pca2[which(fifa_data_pca2$pagegroup == "GK old"),]
+ldahist10 <- fifa_data_pca2[which(fifa_data_pca2$pagegroup == "MID young"),]
+ldahist11<- fifa_data_pca2[which(fifa_data_pca2$pagegroup == "MID middle"),]
+ldahist12 <- fifa_data_pca2[which(fifa_data_pca2$pagegroup == "MID old"),]
+ 
+ldahist1 %>% gather()
+ldahist2 %>% gather()
+ldahist3 %>% gather()
+ldahist4 %>% gather()
+ldahist5 %>% gather()
+ldahist6 %>% gather()
+ldahist7 %>% gather()
+ldahist8 %>% gather()
+ldahist9 %>% gather()
+ldahist10 %>% gather()
+ldahist11 %>% gather()
+ldahist12 %>% gather()
+
+ggplot(gather(ldahist1),aes(value)) + geom_bar(bins = 100) + facet_wrap(~key, nrow = 6, ncol = 7, scales = 'free')
+ggplot(gather(ldahist2),aes(value)) + geom_bar(bins = 100) + facet_wrap(~key, nrow = 6, ncol = 7, scales = 'free')
+ggplot(gather(ldahist3),aes(value)) + geom_bar(bins = 100) + facet_wrap(~key, nrow = 6, ncol = 7, scales = 'free')
+ggplot(gather(ldahist4),aes(value)) + geom_bar(bins = 100) + facet_wrap(~key, nrow = 6, ncol = 7, scales = 'free')
+ggplot(gather(ldahist5),aes(value)) + geom_bar(bins = 100) + facet_wrap(~key, nrow = 6, ncol = 7, scales = 'free')
+ggplot(gather(ldahist6),aes(value)) + geom_bar(bins = 100) + facet_wrap(~key, nrow = 6, ncol = 7, scales = 'free')
+ggplot(gather(ldahist7),aes(value)) + geom_bar(bins = 100) + facet_wrap(~key, nrow = 6, ncol = 7, scales = 'free')
+ggplot(gather(ldahist8),aes(value)) + geom_bar(bins = 100) + facet_wrap(~key, nrow = 6, ncol = 7, scales = 'free')
+ggplot(gather(ldahist9),aes(value)) + geom_bar(bins = 100) + facet_wrap(~key, nrow = 6, ncol = 7, scales = 'free')
+ggplot(gather(ldahist10),aes(value)) + geom_bar(bins = 100) + facet_wrap(~key, nrow = 6, ncol = 7, scales = 'free')
+ggplot(gather(ldahist11),aes(value)) + geom_bar(bins = 100) + facet_wrap(~key, nrow = 6, ncol = 7, scales = 'free')
+ggplot(gather(ldahist12),aes(value)) + geom_bar(bins = 100) + facet_wrap(~key, nrow = 6, ncol = 7, scales = 'free')
+
+
+```
+# 1. Create three new dataframes of 50 observations each separating each species out,
+# e.g. setosa <- subset(iris, iris$Species == "setosa")
+# 2. create 5 randomly subsampled groups from each species, as follows:
+# Start with setosa.
+# sample.int(50) gives a random permutation of 50 row indices.
+# create your five samples by selecting groups of 10 permuted indices in turn, e.g.
+# ids <- sample(50)
+# iris1 <- setosa[ids[1:10], ]
+# iris2 <- setosa[ids[11:20], ] etc.
+# 3. Do this for each species:
+# Generate a new permutation for the next species group, and do the same thing,
+# adding the subgroups to the existing data frames with rbind, e.g.
+# ids <- sample(50)
+# iris1 <- rbind(iris1, versicolor[ids[1:10], ])
+# etc.
+# You could use a loop to automate this process if you like.
+```{r}
+
+
+head(fifa_data_pagegroup)
+colpca1 <- c(1, 3, 5, 6, 8, 9, 18, 23:58, 64)
+
+head(fifa_data_pagegroup)
+
+library(groupdata2)
+
+unique(fifa_data_pagegroup$pagegroup)
+summary(fifa_data_pagegroup$pagegroup)
+
+
+fifa_data_pagegroup <- fifa_data_pagegroup[-which(fifa_data_pagegroup$pagegroup == 'NA young'),]
+fifa_data_pagegroup <- fifa_data_pagegroup[-which(fifa_data_pagegroup$pagegroup == 'NA middle'),]
+fifa_data_pagegroup <- fifa_data_pagegroup[-which(fifa_data_pagegroup$pagegroup == 'NA old'),]
+fifa_data_pagegroup
+#fifa_data_pagegroup <- na.omit(fifa_data_pagegroup[colpca1])
+fifa_data_pagegroup1 <- fifa_data_pagegroup
+
+set.seed(1234)
+cv <- fold(fifa_data_pagegroup1, k = 5, cat_col = 'pagegroup', id_col = 'X1')
+cv <- cv %>%
+  rename(fold = .folds)
+head(cv)
+test <- subset(cv, fold == 5)
+train <- anti_join(cv, test)
+head(fifa_data_pagegroup1)
+head(train)
+ldacol <- c(1:6, 8:44)
+
+trainlda <- train[ldacol]
+testlda <- test[ldacol]
+head(trainlda)
+ 
+
+
+write.csv(trainlda,'healthstudy2.csv')testlda1<- as.matrix(testlda)
+
+
+mlda <- lda(pagegroup ~ ., data = trainlda[,-1]) 
+mlda
+
+lda.pred <- predict(mlda, newdata = testlda[,-1])
+lda.pred1 <- lda.pred[[1]]
+lda.pred1 <- as.matrix(lda.pred1)
+
+confusion(as.vector(lda.pred1), as.vector(testlda1[,43]), quietly = FALSE)
+
+trainqda <- droplevels(trainlda)
+
+unique(trainqda$pagegroup)
+mqda <- qda(pagegroup ~ ., data = trainqda[,-1])
+mqda
+
+```
+```{r}
+fifa_data_pagegroup2 <- transform(fifa_data, pagegroup = paste(pgroup,AgeGroup))
+head(fifa_data_pagegroup2)
+
+extract <- function(x){
+  regexp <- "[[:digit:]]+"
+  str_extract(x, regexp)
+}
+temp1 <- sapply(fifa_data_pagegroup2$Weight, extract)
+fifa_data_pagegroup2$Weight <- as.numeric(temp1)
+
+temp2 <- strsplit(fifa_data_pagegroup2$Height, "'")
+for (i in 1:length(temp2)) {
+  temp2[[i]] <- as.numeric(temp2[[i]])
+}
+for (i in 1:length(temp2)) {
+  temp2[[i]] <- (temp2[[i]][1] *12) + temp2[[i]][2]
+}
+
+temp3 <- as.numeric(unlist(temp2))
+
+fifa_data_pagegroup2$Height <- temp3
+
+colpca1 <- c(1, 2, 3, 5, 6, 8, 9, 18, 23:58, 64)
+
+head(fifa_data_pagegroup2)
+
+library(groupdata2)
+
+unique(fifa_data_pagegroup2$pagegroup)
+summary(fifa_data_pagegroup2$pagegroup)
+
+
+fifa_data_pagegroup2 <- fifa_data_pagegroup2[-which(fifa_data_pagegroup2$pagegroup == 'NA young'),]
+fifa_data_pagegroup2 <- fifa_data_pagegroup2[-which(fifa_data_pagegroup2$pagegroup == 'NA middle'),]
+fifa_data_pagegroup2 <- fifa_data_pagegroup2[-which(fifa_data_pagegroup2$pagegroup == 'NA old'),]
+fifa_data_pagegroup2
+fifa_data_pagegroup2 <- na.omit(fifa_data_pagegroup2[colpca1])
+fifa_data_pagegroup3 <- fifa_data_pagegroup2
+fifa_data_pagegroup3$pagegroup <- droplevels(fifa_data_pagegroup3$pagegroup)
+
+set.seed(1234)
+cv <- fold(fifa_data_pagegroup3, k = 5, cat_col = 'pagegroup', id_col = 'X1')
+cv <- cv %>%
+  rename(fold = .folds)
+head(cv)
+test1 <- subset(cv, fold == 5)
+train1 <- anti_join(cv, test1)
+head(fifa_data_pagegroup3)
+head(train1)
+ldacol1 <- c(1:7, 9:45)
+
+trainlda2 <- train1[ldacol1]
+testlda2 <- test1[ldacol1]
+head(trainlda2)
+
+write.csv(trainlda2,'train2.csv')
+write.csv(testlda2,'test2.csv')
+```
+
+```{r}
+qda.pred <- predict(mqda, newdata = test)
+confusion <- function(yhat, y, quietly = FALSE){
+if(!quietly) message("yhat is the vector of predicted outcomes, possibly a factor.
+  \n Sensitivity = (first level predicted) / (first level actual) 
+  \n Specificity = (second level predicted) / (second level actual)")
+if(!is.factor(y) & is.factor(yhat))
+  y <- as.factor(y)
+if(!all.equal(levels(yhat), levels(y))) 
+  stop("Factor levels of yhat and y do not match.")
+confusion_mat <- table(yhat, y, deparse.level = 2)
+stats <- data.frame(sensitivity = confusion_mat[1, 1]/sum(confusion_mat[, 1]), specificity 
+                    = confusion_mat[2, 2]/sum(confusion_mat[, 2]))
+return(list(confusion_mat = confusion_mat, stats = stats))
+}
+```
+
+```{r}
+knn_models <- list()
+
+ktrain <- trainlda[,-c(1,43)]
+ktest <- testlda[,-c(1,43)]
+
+for(i in 1:25) {
+  knn_models[[i]] <- knn(ktrain, ktest, cl = trainlda$pagegroup, k = i)
+}
+
+knn_results <- lapply(knn_models, FUN = function(x) {
+  return(confusion(x, testlda$pagegroup, quietly = TRUE)$stats)
+}
+)
+
+knn_results <- bind_rows(knn_results)
+knn_results$K <- 1:25
+
+ggplot(knn_results, aes(x = specificity, y = sensitivity, label = K)) + geom_point() + geom_text(hjust = 2)
+#Choose 20
+```
+```{r}
+tune.out <-tune(svm, pagegroup~., data = trainlda[,-1], kernel = "radial", ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 100)))
+
+bestmod <- tune.out$best.model
+#Run it and do prediction / misclassification
+```
+```{r}
+library(reticulate)
+
+use_python("/Users/akshay-mac/anaconda3/bin/python")
+
+# Check the version of Python.
+py_config()
+```
+```{python}
+import pandas as pd
+Dict = {'x1': [1,2,3], 'x2': [4,5,6], 'x3': [7,8,9] }
+my_df2 = pd.DataFrame(Dict)
+print(my_df2)
+```
+
+```{python}
+import pandas as pd
+import numpy as np
+import random as rnd
+import seaborn as sns
+import matplotlib.pyplot as plt
+%matplotlib inline
+import warnings
+warnings.filterwarnings('ignore')
+from sklearn import preprocessing
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import cross_validate
+from sklearn.metrics import recall_score
+```
+
+subsets <- list()
+for (i in levels(fifa_data_pagegroup$pagegroup)) {
+  subsets[[i]] <- subset(fifa_data_pagegroup, pagegroup == i)
+}
+
+subsets <- subsets[-c(10,11,12)]
+
+cv1 <- data.frame()
+for (j in subsets) {
+  cv1 <- rbind(cv1, sample_frac(j, 0.2))
+}
+
+tmp1 <- anti_join(fifa_data_pagegroup, cv1, by = "id") 
+subsets2 <- list()
+for (i in levels(tmp1$pagegroup)) {
+  subsets2[[i]] <- subset(tmp1, pagegroup == i)
+}
+
+cv2 <- data.frame()
+for (j in subsets2) {
+  cv2 <- rbind(cv2, sample_frac(j, 0.25))
+}
+
+tmp2 <- anti_join(fifa_data_pagegroup, cv2, by = "id") 
+subsets3 <- list()
+for (i in levels(tmp2$pagegroup)) {
+  subsets3[[i]] <- subset(tmp2, pagegroup == i)
+}
+
+cv3 <- data.frame()
+for (j in subsets3) {
+  cv3 <- rbind(tmp2, sample_frac(j, 0.333333333))
+}
+
+tmp3 <- anti_join(fifa_data_pagegroup, cv3, by = "id") 
+subsets4 <- list()
+for (i in levels(tmp3$pagegroup)) {
+  subsets4[[i]] <- subset(tmp3, pagegroup == i)
+}
+
+cv4 <- data.frame()
+for (j in subsets4) {
+  cv4 <- rbind(cv3, sample_frac(j, 0.5))
+}
+
+tmp4 <- anti_join(fifa_data_pagegroup, cv4, by = "id") 
+subsets5 <- list()
+for (i in levels(tmp4$pagegroup)) {
+  subsets5[[i]] <- subset(tmp4, pagegroup == i)
+  print(subsets5[[i]])
+}
+
+cv5 <- data.frame()
+for (j in subsets5) {
+  cv5 <- rbind(cv4, sample_frac(j, 1))
+}
+
+tmp5 <- anti_join(fifa_data_pagegroup, cv5, by = "id") 
+subsets6 <- list()
+for (i in levels(tmp1$pagegroup)) {
+  subsets6[[i]] <- subset(tmp5, pagegroup == i)
+  print(subsets6[[i]])
+}
+```{r}
+cv <- list(cv1, cv2, cv3, cv4, cv5)
+print(cv)
+
+for (k in cv){
+  
+for (j in subsets) {
+  cv[[]] <- rbind(cv1, sample_frac(j, 0.2))
+}
+  
+}
+fifa_data_pagegroup$id <- 1:nrow(fifa_data_pagegroup)
+fifa.5fold <- list()
+fifa.5fold[[1]] <- sample_frac(fifa_data_pagegroup, 0.2)
+head(fifa.5fold[[1]])
+fifa.temp <- anti_join(fifa_data_pagegroup, fifa.5fold[[1]], by = "id") %>% group_by(pagegroup)
+
+
+nrow(subset(fifa.temp, pagegroup == "OFF "))
+for (i in 2:5){
+fifa.5fold[[i]] <- sample_n(fifa.temp, 0.2)
+fifa.temp <- anti_join(fifa.temp, fifa.5fold[[i]], by = "id") %>% group_by(., pagegroup)
+}
+names(fifa.5fold) <- c("OFF young", "OFF middle", "OFF old", "DEF young", "DEF middle", "DEF old", "GK young", "GK middle", "GK old", "MID young", "MID middle", "MID old")
+# Quick quality check shows we have 10 of each type in each subset
+lapply(fifa.5fold, FUN = summary)
+
+
+
+
+```
+
+```{r}
+mlda <- lda(pagegroup ~ ., data = fifa_data_pca2) 
+
+mlda
+lda.pred <- predict(mlda, newdata = test)
+
+```
+
+```{r}
+mqda <- qda(pagegroup ~ ., data = fifa_data_pca2) 
+
+mqda
+```
+
+```{r}
+set.seed(1)
+head(fifa_data_pagegroup3)
+rf.fifa <- randomForest(pagegroup~., data = trainlda2[,-c(1:3)], mtry = 7, importance = TRUE, ntree = 500)
+rf.fifa
+
+yhat.bag <- predict(rf.fifa, newdata = testlda2)
+confusion(yhat.bag, testlda2$pagegroup)
+
+importance(rf.fifa)
+varImpPlot(rf.fifa)
+```
+
+```{r}
+league <- read_csv("league - league.csv")
+head(league)
+league <- na.omit(league)
+
+0.4*nrow(league)
+league[nrow(league),]
+
+league <- league %>% mutate(perf = ifelse(Whoscored <= 6.35, "poor", ifelse(Whoscored >= 6.36 & Whoscored <= 6.56, "below", ifelse(Whoscored >= 6.57 & Whoscored <= 6.71, "average", ifelse(Whoscored >= 6.72 & Whoscored <= 6.89, "above", "excellent")))))
+
+#(8.48,6.9) , (6.89,6.72) , (6.71, 6.57), (6.56,6.36), (6.35, 5.42)
+
+
+
+colpcal <- c(2:3, 8:10, 47)
+
+league2 <- league[,-colpcal]
+
+# write_csv(league2, "league2.csv")
+
+pca_league <- prcomp(league2 %>% dplyr::select(-X1, -Whoscored, -perf), scale = TRUE)
+
+summary(pca_league)
+
+pca_league$rotation
+
+screeplot(pca_league)
+
+pca_scoresleague <- pca_league$x
+
+ldrleague <- pca_scoresleague %>%
+  data.frame() %>%
+  mutate(X1 = league2$X1, perf = league2$perf) %>%
+  dplyr::select(X1, perf, everything())
+ldrleague
+
+colors3 <- c("blue", "red", "green", "yellow", "purple")
+colors3 <- colors3[as.factor(ldrleague$perf)]
+s5d <- scatterplot3d(ldrleague[,c(3,4,5)], pch = 1,  color=colors3)
+#legend("right", legend = levels(as.factor(ldrleague$perf)), col = colors3, pch = 16)
+
+ggplot(ldrleague, aes(x = PC1, y = PC2, color = ldrleague$perf)) +geom_vline(xintercept = 0) +
+geom_hline(yintercept = 0) +geom_text(aes(label = X1), size = 2) +scale_x_continuous(breaks = -10:10) +coord_cartesian(xlim = c(-15, 7)) +theme_light()
+
+
+```
+
+```{r}
+set.seed(1234)
+league3 <- subset(league2, select = -c(1,42))
+train_size <- floor(0.65 * nrow (league3))
+subset <- sample(seq_len(nrow(league3)), size = train_size)
+train_league <- league3[subset,]
+test_league <- league3[-subset,]
+lm.mod <- lm(Whoscored~., data = league3)
+summary(lm.mod)
+```
+
+```{r}
+train_y <- predict(lm.mod, train_league)
+plot(lm.mod)
+```
+
+```{r}
+library(glmnet)
+#Ridge
+ytr <- league3$Whoscored
+xtr <- model.matrix(Whoscored~., league3)[, -1]
+cvRidge.out <- cv.glmnet(xtr,ytr,alpha=0,nfolds=5)
+print(cvRidge.out$cvm)
+plot(cvRidge.out)
+```
+
+```{r}
+cat("CV Errors", cvRidge.out$cvm,fill=TRUE)
+```
+
+```{r}
+cat("Lambda with smallest CV Error",
+cvRidge.out$lambda[which.min(cvRidge.out$cvm)],fill=TRUE)
+```
+
+```{r}
+cat("Coefficients", as.numeric(coef(cvRidge.out, s = "lambda.min")),fill=TRUE)
+```
+
+```{r}
+cat("Number of Zero Coefficients",
+sum(abs(coef(cvRidge.out))<1e-8),fill=TRUE)
+```
+
+```{r}
+#Lasso
+
+cvLasso.out <- cv.glmnet(xtr,ytr,alpha=1,nfolds=5)
+print(cvLasso.out$cvm)
+plot(cvLasso.out)
+```
+
+```{r}
+cat("CV Errors", cvLasso.out$cvm,fill=TRUE)
+```
+
+```{r}
+cat("Lambda with smallest CV Error",
+cvLasso.out$lambda[which.min(cvLasso.out$cvm)],fill=TRUE)
+```
+
+```{r}
+cat("Number of Zero Coefficients",sum(abs(coef(cvLasso.out))<1e-8),
+fill=TRUE)
+```
+
+```{r}
+library(pls)
+pcrout <- pcr(ytr~xtr,scale=TRUE, validation="CV")
+summary(pcrout)
+```
+
+```{r}
+validationplot(pcrout,val.type="MSEP")
+```
+
+```{r}
+plsout <- plsr(ytr~xtr,scale=TRUE,validation="CV")
+summary(plsout)
+```
+
+```{r}
+validationplot(plsout, val.type="MSEP")
+```
+
