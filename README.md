@@ -1,6 +1,6 @@
 # FIFA Machine Learning Project
 
-This is the final project for machine learning class.
+An analysis of FIFA 19 game data and real-world soccer players' performance created for machine learning class.
 
 In the FIFA 19 dataset, each player contains numerous in-game attributes that distinguish them from one
 another. The attributes of each player are carefully engineered by the game developers to accurately represent
