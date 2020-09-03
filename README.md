@@ -21,4 +21,4 @@ another classifier ‘perf’ that divided the players based on their performanc
 on FIFA 19 attributes, we conducted Principal Component Analysis on players’ performances. Among the
 classification techniques, XGBoosting, Logistic Regression, and LDA performed the best. Then, we used several
 regression techniques such as PCR, Ridge, and Lasso to test how accurately the players’ attributes from FIFA 19
-predicted the players’ real-life ratings.
+predicted the players’ real-life ratings. 
